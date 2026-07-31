@@ -71,7 +71,7 @@ The Phase 1 build is a **Knowledge Fabric Command Center**, not "a chatbot with 
        │   │  COMMAND CENTER  ·  docs · entities · rels · units · dom │ │
        │   ├──────────────────────────┬───────────────────────────────┤ │
        │   │   KNOWLEDGE GALAXY       │   AI COPILOT                  │ │
-       │   │   (vis-network)          │   (BM25 + extractive answer)  │ │
+       │   │   (vis-network)          │   (semantic + BM25 + local AI)│ │
        │   ├──────────────────────────┼───────────────────────────────┤ │
        │   │   SOURCE LINEAGE         │   INSIGHTS DASHBOARD          │ │
        │   │   Answer → Doc → Page    │   Heatmap · Cloud · Timeline  │ │
@@ -169,23 +169,22 @@ To serve at `kf.your-company.com` instead of `username.github.io/repo`:
 
 ## What's in / what's out
 
-### In (Phase 1)
+### In
 
 - Markdown, plain text, PDF, DOCX ingestion with heading awareness
 - Section-respecting chunker with paragraph-level provenance
-- Client-side BM25 with precomputed inverted index
+- **Hybrid retrieval** — semantic embeddings (all-MiniLM-L6-v2, computed at build time) fused with client-side BM25 keyword scoring. Semantic captures meaning ("newborn" → neonate, "sugar" → glucose); BM25 nails exact tokens, abbreviations, and part numbers.
+- **In-browser AI synthesis (optional)** — a small instruct model (Llama-3.2-1B via WebLLM/WebGPU) runs entirely in the user's browser to write grounded, cited answers that synthesize across multiple documents. No API keys, no backend, no data leaves the device. Click **Enable AI synthesis** to load it (~0.9 GB, downloaded once and cached).
+- Graceful degradation: semantic search works everywhere (WASM, no GPU); if the AI model or WebGPU isn't available, answers fall back to extractive composition, and if the embedding model can't load, retrieval falls back to BM25. The page never breaks.
 - Citation card UI showing document, page, section path, paragraph excerpt, and a confidence score
 - Knowledge graph with force-directed layout (vis-network)
 - Reasoning trace: per-query subgraph highlight showing which entities were activated and which relationships were traversed
-- Extractive answer composition (no LLM, no hallucination risk)
 - GitHub Actions: tests + automatic Pages deployment
 
-### Out (deferred to Phase 2)
+### Out (deferred)
 
-- Vector embeddings / semantic retrieval
-- LLM answer synthesis
 - Hosted backend, authentication, per-document permissions
-- Live Confluence / Jira connectors (mock data only in Phase 1)
+- Live Confluence / Jira connectors (mock data only)
 
 ---
 

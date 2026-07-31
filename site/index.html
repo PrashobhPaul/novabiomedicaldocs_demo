@@ -99,7 +99,15 @@
       <header class="pane-head">
         <div>
           <h2>AI Copilot</h2>
-          <p class="pane-sub">Citation-grounded answers from the Nova Biomedical meter manuals</p>
+          <p class="pane-sub" id="copilot-sub">Semantic search across the Nova Biomedical meter manuals</p>
+        </div>
+        <div class="copilot-controls">
+          <button class="ai-enable" id="ai-enable" type="button"
+            title="Load a local AI model that runs entirely in your browser (~0.9 GB, downloaded once and cached). No API keys, no backend — nothing leaves this device.">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2z"/><path d="M9 22h6"/></svg>
+            <span id="ai-enable-label">Enable AI synthesis</span>
+          </button>
+          <span class="ai-pill" id="ai-pill" hidden></span>
         </div>
         <div class="copilot-metrics" id="copilot-metrics" hidden>
           <span class="metric"><span class="m-k">conf</span><span class="m-v" id="m-conf">—</span></span>
@@ -114,10 +122,10 @@
           <div class="copilot-orb"></div>
           <p class="copilot-hint">Ask Knowledge Fabric</p>
           <div class="suggestions" id="suggestions">
-            <button class="chip">What is the intended use of the StatSensor Creatinine meter?</button>
+            <button class="chip">What is the intended use of the StatStrip Glucose meter?</button>
             <button class="chip">How do I run a quality control test?</button>
-            <button class="chip">How do I clean and disinfect the meter?</button>
-            <button class="chip">How do I perform a linearity test?</button>
+            <button class="chip">Can I use these meters on a newborn?</button>
+            <button class="chip">What sample types are acceptable?</button>
           </div>
         </div>
       </div>

@@ -478,6 +478,65 @@ button { font-family: inherit; cursor: pointer; }
 /* ============================================================================
    AI COPILOT (pane 2)
    ============================================================================ */
+/* --- AI synthesis control + status --------------------------------------- */
+.copilot-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.ai-enable {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-soft);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, opacity 0.15s;
+}
+.ai-enable:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: rgba(89, 232, 197, 0.16);
+}
+.ai-enable:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  color: var(--text-mute);
+}
+.ai-pill {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 5px 9px;
+  border-radius: 7px;
+  white-space: nowrap;
+}
+.ai-pill.loading { color: #ffd479; background: rgba(255, 212, 121, 0.12); }
+.ai-pill.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 8px rgba(89, 232, 197, 0.25);
+}
+.ai-pill.err { color: var(--danger); background: rgba(255, 107, 128, 0.12); }
+
+.answer-text.streaming {
+  color: var(--text-dim);
+  font-style: italic;
+}
+.answer-text.streaming::after {
+  content: '▍';
+  animation: blink 1s steps(2) infinite;
+  color: var(--accent);
+  font-style: normal;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
 .copilot-metrics {
   display: flex;
   gap: 12px;

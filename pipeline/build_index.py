@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .bm25_index import build_bm25_index
 from .chunker import chunk_paragraphs
+from .embeddings import build_embeddings
 from .entities import build_relationships, extract_entities_from_chunks
 from .parsers import iter_sources, parse_any
 
@@ -68,6 +69,10 @@ def build(source_dir: Path, out_path: Path) -> dict:
     bm25 = build_bm25_index(all_chunks)
     print(f"  ✓ vocab={len(bm25['vocab'])} avgdl={bm25['avgdl']:.1f}")
 
+    # Semantic embeddings (best-effort — falls back to keyword-only if the
+    # embedding backend or model download is unavailable)
+    embeddings = build_embeddings(all_chunks)
+
     # Map: entity_id -> [chunk_indices] for "reasoning trace"
     canonical_to_id = {e["canonical"]: e["id"] for e in entities}
     chunk_to_entities: list[list[int]] = [[] for _ in all_chunks]
@@ -103,12 +108,14 @@ def build(source_dir: Path, out_path: Path) -> dict:
         "entities": entities,
         "relationships": relationships,
         "bm25": bm25,
+        "embeddings": embeddings,
         "stats": {
             "document_count": len(documents),
             "chunk_count": len(all_chunks),
             "entity_count": len(entities),
             "relationship_count": len(relationships),
             "vocab_size": len(bm25["vocab"]),
+            "semantic": bool(embeddings),
         },
     }
 

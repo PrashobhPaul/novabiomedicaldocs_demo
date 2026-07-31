@@ -8,6 +8,11 @@ import { KnowledgeGraph } from './graph.js';
 import { initInsights } from './insights.js';
 import { initLineage, renderLineage } from './lineage.js';
 import { initExplain, openExplain } from './explain.js';
+import { HybridRetriever } from './retrieval.js';
+import { ensureEmbedder, onEmbedderStatus } from './embedder.js';
+import {
+  webgpuAvailable, ensureEngine, synthesize, onLlmStatus, MODEL_ID,
+} from './llm.js';
 
 const INDEX_URL = 'data/index.json';
 
@@ -17,12 +22,15 @@ const INDEX_URL = 'data/index.json';
 const state = {
   index: null,
   bm25: null,
+  retriever: null,
   graph: null,
   chunks: [],
   chunksById: new Map(),
   entitiesById: new Map(),
   lastQuery: null,
   lastResult: null,
+  useLLM: false,       // AI synthesis enabled by the user
+  semanticReady: false,
 };
 
 // ============================================================================
@@ -42,15 +50,79 @@ async function boot() {
   state.chunksById = new Map(state.chunks.map(c => [c.id, c]));
   state.entitiesById = new Map(state.index.entities.map(e => [e.id, e]));
   state.bm25 = new BM25(state.index.bm25);
+  state.retriever = new HybridRetriever(state.index, state.bm25);
 
   renderCommandTiles();
   setupGalaxy();
   setupCopilot();
   setupSuggestions();
+  setupEngineControls();
 
   initLineage({ onChunkClick: id => showChunkDetail(state.chunksById.get(id)) });
   initExplain(state.index);
   initInsights(state.index, { onEntityClick: showEntityDetail });
+}
+
+// ============================================================================
+// Engine controls — semantic warm-up + optional in-browser LLM synthesis
+// ============================================================================
+function setupEngineControls() {
+  const sub = document.getElementById('copilot-sub');
+  const pill = document.getElementById('ai-pill');
+  const btn = document.getElementById('ai-enable');
+  const label = document.getElementById('ai-enable-label');
+
+  // Warm the (small) semantic model in the background so hybrid search is
+  // ready by the first question. Falls back to keyword search on failure.
+  if (state.retriever.hasSemantic) {
+    onEmbedderStatus(s => {
+      if (s === 'loading') sub.textContent = 'Loading semantic search model…';
+      else if (s === 'ready') {
+        state.semanticReady = true;
+        sub.textContent = 'Semantic search across all Nova Biomedical meter manuals';
+      } else if (s === 'failed') {
+        sub.textContent = 'Keyword search across the Nova Biomedical meter manuals';
+      }
+    });
+    ensureEmbedder().catch(() => {});
+  } else {
+    sub.textContent = 'Keyword search across the Nova Biomedical meter manuals';
+  }
+
+  // In-browser LLM synthesis (opt-in — it's a ~0.9 GB one-time download).
+  if (!webgpuAvailable()) {
+    btn.disabled = true;
+    label.textContent = 'AI synthesis needs WebGPU';
+    btn.title = 'This browser has no WebGPU support. Semantic search still works; ' +
+      'for local AI synthesis use a recent Chrome or Edge.';
+    return;
+  }
+
+  onLlmStatus(({ status, progress }) => {
+    if (status === 'loading') {
+      pill.hidden = false;
+      pill.textContent = `Loading AI model… ${progress}%`;
+      pill.className = 'ai-pill loading';
+      label.textContent = 'Loading…';
+      btn.disabled = true;
+    } else if (status === 'ready') {
+      pill.hidden = false;
+      pill.textContent = 'AI synthesis ON';
+      pill.className = 'ai-pill on';
+      btn.hidden = true;
+      state.useLLM = true;
+    } else if (status === 'failed') {
+      pill.hidden = false;
+      pill.textContent = 'AI model failed to load';
+      pill.className = 'ai-pill err';
+      btn.disabled = false;
+      label.textContent = 'Retry AI synthesis';
+    }
+  });
+
+  btn.addEventListener('click', () => {
+    ensureEngine().catch(() => {});
+  });
 }
 
 function showFatalError(message) {
@@ -160,20 +232,93 @@ async function ask(question) {
   clearCopilotEmpty();
   appendUserMessage(question);
 
-  await new Promise(r => setTimeout(r, 80));
+  // Hybrid semantic + keyword retrieval (falls back to BM25 on any failure).
+  let ranked;
+  try {
+    ranked = await state.retriever.search(question, 6);
+  } catch (err) {
+    console.warn('[ask] retrieval failed, using BM25:', err);
+    ranked = state.bm25.search(question, 6);
+  }
 
-  const ranked = state.bm25.search(question, 6);
-  const { answerHtml, citations } = buildAnswer(question, ranked, state.chunks);
+  const trace = state.graph.highlightTrace(ranked.map(r => state.chunks[r.chunkIdx].id));
 
-  const trace = state.graph.highlightTrace(citations.map(c => c.chunk.id));
+  if (state.useLLM) {
+    await askWithLLM(question, ranked, trace);
+  } else {
+    const { answerHtml, citations } = buildAnswer(question, ranked, state.chunks);
+    const { root } = createAssistantBubble();
+    finalizeAssistant(root, { question, answerHtml, citations, ranked, trace });
+    state.lastQuery = question;
+    state.lastResult = { ranked, citations, answerHtml, trace };
+    renderLineage(question, answerHtml, citations);
+    updateCopilotMetrics(citations, trace, ranked);
+    updateGalaxyStatus(trace);
+  }
+}
 
-  state.lastQuery = question;
-  state.lastResult = { ranked, citations, answerHtml, trace };
+// Turn retrieved chunks into a numbered citation/passage set for the LLM.
+function toPassages(ranked) {
+  const top = ranked[0]?.score || 1;
+  return ranked.map((r, i) => ({
+    num: i + 1,
+    chunkIdx: r.chunkIdx,
+    chunk: state.chunks[r.chunkIdx],
+    score: r.score,
+    confidence: top > 0 ? Math.max(0.15, r.score / top) : 0,
+  }));
+}
 
-  appendAssistantMessage(question, answerHtml, citations, ranked, trace);
-  renderLineage(question, answerHtml, citations);
-  updateCopilotMetrics(citations, trace, ranked);
-  updateGalaxyStatus(trace);
+async function askWithLLM(question, ranked, trace) {
+  const passages = toPassages(ranked);
+  const { root, textEl } = createAssistantBubble();
+  textEl.classList.add('streaming');
+  textEl.textContent = 'Synthesizing an answer from the manuals…';
+
+  let acc = '';
+  try {
+    const text = await synthesize(question, passages, {
+      onToken: delta => {
+        acc += delta;
+        textEl.textContent = acc;
+        scrollMessages();
+      },
+    });
+    const answerHtml = renderLlmAnswer(text || acc, passages.length);
+    textEl.classList.remove('streaming');
+    finalizeAssistant(root, { question, answerHtml, citations: passages, ranked, trace });
+    state.lastQuery = question;
+    state.lastResult = { ranked, citations: passages, answerHtml, trace };
+    renderLineage(question, answerHtml, passages);
+    updateCopilotMetrics(passages, trace, ranked);
+    updateGalaxyStatus(trace);
+  } catch (err) {
+    console.warn('[ask] LLM synthesis failed, using extractive answer:', err);
+    textEl.classList.remove('streaming');
+    const { answerHtml, citations } = buildAnswer(question, ranked, state.chunks);
+    finalizeAssistant(root, { question, answerHtml, citations, ranked, trace });
+    renderLineage(question, answerHtml, citations);
+    updateCopilotMetrics(citations, trace, ranked);
+    updateGalaxyStatus(trace);
+  }
+}
+
+// Render a model answer: escape, keep **bold**, turn [n] into clickable
+// citation refs, and preserve simple paragraph/line structure.
+function renderLlmAnswer(text, maxN) {
+  let html = escapeHtml(text.trim());
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\[(\d+)\]/g, (m, d) => {
+    const n = parseInt(d, 10);
+    return n >= 1 && n <= maxN
+      ? `<sup class="cite-ref" data-cite="${n}">[${n}]</sup>`
+      : m;
+  });
+  html = html
+    .replace(/^\s*[-*]\s+/gm, '• ')
+    .replace(/\n{2,}/g, '</p><p>')
+    .replace(/\n/g, '<br>');
+  return `<p>${html}</p>`;
 }
 
 function updateCopilotMetrics(citations, trace, ranked) {
@@ -210,9 +355,18 @@ function appendUserMessage(text) {
   scrollMessages();
 }
 
-function appendAssistantMessage(question, answerHtml, citations, ranked, trace) {
-  const tpl = document.getElementById('tpl-assistant-msg').content.cloneNode(true);
-  const root = tpl.querySelector('.msg-assistant');
+// Create an (initially empty) assistant bubble and return handles so callers
+// can stream tokens into it, then finalize with citations + actions.
+function createAssistantBubble() {
+  const frag = document.getElementById('tpl-assistant-msg').content.cloneNode(true);
+  const root = frag.querySelector('.msg-assistant');
+  const textEl = root.querySelector('.answer-text');
+  document.getElementById('messages').appendChild(frag); // moves `root` into the DOM
+  scrollMessages();
+  return { root, textEl };
+}
+
+function finalizeAssistant(root, { question, answerHtml, citations, ranked, trace }) {
   root.querySelector('.answer-text').innerHTML = answerHtml;
 
   // Confidence bar
@@ -221,17 +375,14 @@ function appendAssistantMessage(question, answerHtml, citations, ranked, trace) 
   root.querySelector('.ac-fill').style.width = `${pct}%`;
   root.querySelector('.ac-value').textContent = `${pct}%`;
 
-  // Explain Answer button — opens overlay with reasoning pipeline
-  root.querySelector('.action-explain').addEventListener('click', () => {
-    openExplain({
-      question,
-      ranked,
-      citations,
-      traceEntities: trace.activeEntities,
-      traceEdges: trace.edgeCount,
-      answerHtml,
-    });
+  const explainPayload = () => ({
+    question, ranked, citations,
+    traceEntities: trace.activeEntities,
+    traceEdges: trace.edgeCount,
+    answerHtml,
   });
+
+  root.querySelector('.action-explain').addEventListener('click', () => openExplain(explainPayload()));
 
   // Inline [#N] citation refs → chunk detail in galaxy detail card
   root.querySelectorAll('.cite-ref').forEach(ref => {
@@ -241,19 +392,12 @@ function appendAssistantMessage(question, answerHtml, citations, ranked, trace) 
       if (cite) showChunkDetail(cite.chunk);
     });
   });
-
-  document.getElementById('messages').appendChild(tpl);
   scrollMessages();
 
   // Also expose the global "Explain Answer" button in the lineage pane header
   const explainBtn = document.getElementById('explain-btn');
   explainBtn.hidden = false;
-  explainBtn.onclick = () => openExplain({
-    question, ranked, citations,
-    traceEntities: trace.activeEntities,
-    traceEdges: trace.edgeCount,
-    answerHtml,
-  });
+  explainBtn.onclick = () => openExplain(explainPayload());
 }
 
 function scrollMessages() {
