@@ -525,6 +525,77 @@ button { font-family: inherit; cursor: pointer; }
 }
 .ai-pill.err { color: var(--danger); background: rgba(255, 107, 128, 0.12); }
 
+/* --- Galaxy activation caption ------------------------------------------- */
+.galaxy-activation {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  z-index: 6;
+  background: linear-gradient(180deg, rgba(9, 14, 28, 0.72), rgba(9, 14, 28, 0.92));
+  border: 1px solid var(--accent-soft);
+  border-radius: 12px;
+  padding: 10px 12px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.35);
+  animation: fadeInUp 0.28s ease both;
+}
+.ga-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.ga-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  flex-shrink: 0;
+}
+.ga-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.ga-meta {
+  font-size: 10.5px;
+  color: var(--text-mute);
+  margin-left: auto;
+  font-family: var(--font-mono);
+}
+.ga-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 84px;
+  overflow-y: auto;
+}
+.ga-chip {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #06231d;
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  padding: 4px 9px;
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.15s;
+}
+.ga-chip:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 10px rgba(94, 227, 197, 0.6);
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.answer-text.reveal { animation: fadeInUp 0.22s ease both; }
+
 .answer-text.streaming {
   color: var(--text-dim);
   font-style: italic;

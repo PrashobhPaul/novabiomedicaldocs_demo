@@ -129,26 +129,35 @@ export class KnowledgeGraph {
 
     const nodeUpdates = [];
     for (const entity of this.index.entities) {
-      let color, fontColor, borderWidth;
       if (activeEntityIds.has(entity.id)) {
-        color = NODE_ACTIVE;
-        fontColor = '#e6eaf5';
-        borderWidth = 2;
+        // Activated: bright, bordered, glowing, larger label — these are the
+        // concepts the answer was actually built from.
+        nodeUpdates.push({
+          id: entity.id,
+          color: { background: NODE_ACTIVE, border: '#c7fff0' },
+          font: { color: '#ffffff', size: 16, face: 'Inter', strokeWidth: 3, strokeColor: '#06231d' },
+          borderWidth: 3,
+          shadow: { enabled: true, color: 'rgba(94,227,197,0.9)', size: 26, x: 0, y: 0 },
+        });
       } else if (neighborIds.has(entity.id)) {
-        color = NODE_RELATED;
-        fontColor = '#9ba3bd';
-        borderWidth = 0;
+        // One hop away: related context.
+        nodeUpdates.push({
+          id: entity.id,
+          color: { background: NODE_RELATED, border: NODE_RELATED },
+          font: { color: '#b9c2e0', size: 12, face: 'Inter', strokeWidth: 0 },
+          borderWidth: 0,
+          shadow: { enabled: false },
+        });
       } else {
-        color = NODE_BASE;
-        fontColor = '#5a627c';
-        borderWidth = 0;
+        // Everything else: pushed far back so the activation stands out.
+        nodeUpdates.push({
+          id: entity.id,
+          color: { background: 'rgba(74,84,120,0.30)', border: 'rgba(74,84,120,0.30)' },
+          font: { color: 'rgba(120,128,150,0.45)', size: 10, face: 'Inter', strokeWidth: 0 },
+          borderWidth: 0,
+          shadow: { enabled: false },
+        });
       }
-      nodeUpdates.push({
-        id: entity.id,
-        color: { background: color, border: color },
-        font: { color: fontColor, size: 12, face: 'Inter' },
-        borderWidth,
-      });
     }
     this.nodes.update(nodeUpdates);
 
@@ -179,8 +188,9 @@ export class KnowledgeGraph {
     const nodeUpdates = this.index.entities.map(e => ({
       id: e.id,
       color: { background: NODE_BASE, border: NODE_BASE },
-      font: { color: '#9ba3bd', size: 12, face: 'Inter' },
+      font: { color: '#9ba3bd', size: 12, face: 'Inter', strokeWidth: 0 },
       borderWidth: 0,
+      shadow: { enabled: false },
     }));
     this.nodes.update(nodeUpdates);
 

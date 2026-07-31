@@ -79,6 +79,16 @@
       </header>
       <div id="galaxy" class="galaxy-canvas"></div>
 
+      <!-- Activation caption — names exactly which concepts the answer activated -->
+      <div class="galaxy-activation" id="galaxy-activation" hidden>
+        <div class="ga-head">
+          <span class="ga-dot"></span>
+          <span class="ga-title">Activated by your question</span>
+          <span class="ga-meta" id="ga-meta"></span>
+        </div>
+        <div class="ga-chips" id="ga-chips"></div>
+      </div>
+
       <!-- Floating "Ask Knowledge Fabric" entry sits over the galaxy on mobile -->
       <div class="ask-launcher" id="ask-launcher" hidden>
         <button id="ask-launcher-btn">
@@ -123,9 +133,9 @@
           <p class="copilot-hint">Ask Knowledge Fabric</p>
           <div class="suggestions" id="suggestions">
             <button class="chip">What is the intended use of the StatStrip Glucose meter?</button>
-            <button class="chip">How do I run a quality control test?</button>
             <button class="chip">Can I use these meters on a newborn?</button>
-            <button class="chip">What sample types are acceptable?</button>
+            <button class="chip">What's the difference between the glucose and lactate meters?</button>
+            <button class="chip">How do I run a quality control test?</button>
           </div>
         </div>
       </div>

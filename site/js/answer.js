@@ -5,8 +5,8 @@
 
 import { tokenize } from './search.js';
 
-const MAX_SENTENCES_PER_CHUNK = 2;
-const MAX_TOTAL_SENTENCES = 6;
+const MAX_SENTENCES_PER_CHUNK = 3;
+const MAX_TOTAL_SENTENCES = 10;
 
 // =============================================================================
 // Sentence splitting & scoring

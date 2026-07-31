@@ -48,9 +48,11 @@ async function boot() {
 
   state.chunks = state.index.chunks;
   state.chunksById = new Map(state.chunks.map(c => [c.id, c]));
+  state.chunkIdxById = new Map(state.chunks.map((c, i) => [c.id, i]));
   state.entitiesById = new Map(state.index.entities.map(e => [e.id, e]));
   state.bm25 = new BM25(state.index.bm25);
   state.retriever = new HybridRetriever(state.index, state.bm25);
+  state.demo = await loadDemoAnswers();
 
   renderCommandTiles();
   setupGalaxy();
@@ -226,11 +228,104 @@ function setupSuggestions() {
 }
 
 // ============================================================================
+// Curated instant-answer cache — pre-authored, grounded answers for the key
+// demo questions. Rendered instantly (no model load, no typing delay).
+// ============================================================================
+async function loadDemoAnswers() {
+  try {
+    const res = await fetch('data/demo_answers.json');
+    if (!res.ok) return null;
+    const data = await res.json();
+    const entries = (data.answers || []).map(a => {
+      const keys = [a.q, ...(a.aliases || [])].map(normalizeQ);
+      return { ...a, keys, tokenSets: keys.map(k => new Set(k.split(' ').filter(Boolean))) };
+    });
+    return { entries };
+  } catch {
+    return null;
+  }
+}
+
+function normalizeQ(s) {
+  return String(s).toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function matchDemo(question) {
+  if (!state.demo) return null;
+  const nq = normalizeQ(question);
+  if (nq.split(' ').filter(Boolean).length < 2) return null;
+  const qTokens = new Set(nq.split(' ').filter(Boolean));
+
+  // 1) Exact, then phrase containment (a distinctive key phrase appears in the
+  //    question or vice-versa) — catches natural short forms reliably.
+  for (const e of state.demo.entries) {
+    if (e.keys.includes(nq)) return e;
+    for (const key of e.keys) {
+      if (key.split(' ').length >= 3 && nq.length >= 8 &&
+          (nq.includes(key) || key.includes(nq))) {
+        return e;
+      }
+    }
+  }
+
+  // 2) Fuzzy token-overlap fallback.
+  let best = null, bestScore = 0;
+  for (const e of state.demo.entries) {
+    for (const ts of e.tokenSets) {
+      let inter = 0;
+      for (const t of qTokens) if (ts.has(t)) inter++;
+      const union = new Set([...qTokens, ...ts]).size;
+      const j = union ? inter / union : 0;
+      if (j > bestScore) { bestScore = j; best = e; }
+    }
+  }
+  return bestScore >= 0.66 ? best : null;
+}
+
+function citationsFromChunkIds(chunkIds) {
+  const cites = [];
+  chunkIds.forEach((cid, i) => {
+    const chunk = state.chunksById.get(cid);
+    if (!chunk) return;
+    cites.push({
+      num: cites.length + 1,
+      chunkIdx: state.chunkIdxById.get(cid),
+      chunk,
+      score: 1 - i * 0.04,
+      confidence: Math.max(0.6, 1 - i * 0.05),
+    });
+  });
+  return cites;
+}
+
+function askFromCache(question, entry) {
+  const citations = citationsFromChunkIds(entry.chunk_ids);
+  const validIds = citations.map(c => c.chunk.id);
+  const trace = state.graph.highlightTrace(validIds);
+  const answerHtml = renderLlmAnswer(entry.answer, citations.length);
+  const ranked = citations.map(c => ({ chunkIdx: c.chunkIdx, score: c.score }));
+
+  const { root, textEl } = createAssistantBubble();
+  textEl.classList.add('reveal');
+  finalizeAssistant(root, { question, answerHtml, citations, ranked, trace });
+
+  state.lastQuery = question;
+  state.lastResult = { ranked, citations, answerHtml, trace };
+  renderLineage(question, answerHtml, citations);
+  updateCopilotMetrics(citations, trace, ranked);
+  updateGalaxyStatus(trace);
+}
+
+// ============================================================================
 // Ask flow — orchestrates all four panes
 // ============================================================================
 async function ask(question) {
   clearCopilotEmpty();
   appendUserMessage(question);
+
+  // 1) Curated instant answers for the key demo questions — no wait, no model.
+  const cached = matchDemo(question);
+  if (cached) { askFromCache(question, cached); return; }
 
   // Hybrid semantic + keyword retrieval (falls back to BM25 on any failure).
   let ranked;
@@ -333,11 +428,35 @@ function updateCopilotMetrics(citations, trace, ranked) {
 
 function updateGalaxyStatus(trace) {
   const el = document.getElementById('galaxy-status');
+  const panel = document.getElementById('galaxy-activation');
+  const chipsEl = document.getElementById('ga-chips');
+  const metaEl = document.getElementById('ga-meta');
+
   if (trace.activeEntities.length === 0) {
     el.textContent = 'No entities activated — try a more specific question.';
+    if (panel) panel.hidden = true;
     return;
   }
   el.textContent = `${trace.activeEntities.length} activated · ${trace.neighborCount} neighbors · ${trace.edgeCount} relationships traversed`;
+
+  // On-galaxy caption: name exactly which entities the answer activated.
+  if (panel && chipsEl && metaEl) {
+    const top = [...trace.activeEntities]
+      .sort((a, b) => (b.mention_count || 0) - (a.mention_count || 0))
+      .slice(0, 10);
+    chipsEl.innerHTML = top
+      .map(e => `<button class="ga-chip" data-eid="${e.id}">${escapeHtml(e.name)}</button>`)
+      .join('');
+    const more = trace.activeEntities.length - top.length;
+    metaEl.textContent =
+      `${trace.activeEntities.length} concept${trace.activeEntities.length === 1 ? '' : 's'} activated` +
+      (more > 0 ? ` (+${more} more)` : '') +
+      ` · ${trace.edgeCount} relationship${trace.edgeCount === 1 ? '' : 's'} traversed`;
+    chipsEl.querySelectorAll('.ga-chip').forEach(btn => {
+      btn.addEventListener('click', () => showEntityDetail(parseInt(btn.dataset.eid, 10)));
+    });
+    panel.hidden = false;
+  }
 }
 
 // ============================================================================

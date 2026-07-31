@@ -79,6 +79,9 @@ NOISE_ENTITIES = {
     # Manual boilerplate
     "use manual", "instructions", "instructions for use", "reference manual",
     "meter", "usa", "canada", "fig", "figure", "see", "refer",
+    # Formula/equation fragments and generic test words that clutter the graph
+    "test", "tests", "equation", "equations", "cn", "co", "min", "max",
+    "step", "steps", "table", "contents", "section", "appendix",
 }
 
 

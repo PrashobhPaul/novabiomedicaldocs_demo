@@ -87,7 +87,8 @@ function buildMessages(question, passages) {
     '- Cite the passages you use inline as [1], [2], etc., matching the passage numbers.\n' +
     '- If the passages do not contain the answer, say so plainly and suggest what to search instead.\n' +
     '- When a question spans multiple meters or documents, synthesize across passages and be explicit about which meter each detail applies to.\n' +
-    '- Be concise, clinical, and precise. Prefer short paragraphs or bullet points. Do not repeat the raw passage text verbatim.';
+    '- Write a COMPLETE, well-structured answer. Do not over-summarize: include all relevant details, numeric values, thresholds, and steps found in the passages. Use a short lead sentence followed by clear bullet points or numbered steps, grouped by meter/topic where helpful.\n' +
+    '- Be clinical and precise, but thorough. Do not copy passage text verbatim — rewrite it into a coherent answer.';
 
   const user =
     `Context passages:\n\n${context}\n\n` +
@@ -108,7 +109,7 @@ export async function synthesize(question, passages, { onToken } = {}) {
   const stream = await engine.chat.completions.create({
     messages,
     temperature: 0.2,
-    max_tokens: 512,
+    max_tokens: 900,
     stream: true,
   });
   let full = '';
